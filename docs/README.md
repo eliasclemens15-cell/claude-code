@@ -24,6 +24,11 @@ lokal im Browser (`localStorage`) auf dem Gerät.
 4. Sie starten einen Tag, tragen Gewicht, Wiederholungen und RPE ein und schicken per
    *Ergebnisse schicken* alles zurück; unter *Pläne → Plan → Ergebnisse* siehst du es im Vergleich zur Vorgabe.
 
+Wochentage: Jeder Plantag kann Wochentage haben (Stift am Tag). Dann zeigt die App „Heute dran“,
+einen Wochenstreifen (gemacht / verpasst / geplant) und dem Trainer unter *Woche* je Freund Quote,
+Sätze, Ø RPE und die letzten 8 Wochen. Tage nach dem letzten Senden eines Freundes gelten als „offen“,
+nicht als „verpasst“ – die App kennt nur, was geschickt wurde.
+
 Alles steckt komprimiert im Link (`#p=…` Plan, `#r=…` Ergebnisse, Format `FL2.` = deflate + base64url).
 Es gibt keinen Server: Daten wandern nur, wenn jemand sie verschickt. Importierte Daten werden streng geprüft
 (`cleanPlan`, `cleanResults`, `cleanTarget`).

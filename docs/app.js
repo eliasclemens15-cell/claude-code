@@ -258,6 +258,11 @@ function cleanSession(s) {
   };
 }
 
+/** Wochentage eines Plantags: Liste aus 1 (Mo) … 7 (So). */
+function cleanWd(v) {
+  return Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))].sort() : [];
+}
+
 function sanitizePlans(list, exercises, known) {
   const out = [];
   for (const p of Array.isArray(list) ? list : []) {
@@ -265,7 +270,7 @@ function sanitizePlans(list, exercises, known) {
     out.push({
       id: str(p.id, 40), name: str(p.name, 60) || 'Plan', note: str(p.note, 500), author: str(p.author, 40), mine: !!p.mine,
       days: p.days.slice(0, 14).map((d) => ({
-        id: str(d && d.id, 40) || uid(), name: str(d && d.name, 60) || 'Tag',
+        id: str(d && d.id, 40) || uid(), name: str(d && d.name, 60) || 'Tag', wd: cleanWd(d && d.wd),
         items: (Array.isArray(d && d.items) ? d.items : []).slice(0, 40).filter((it) => it && typeof it.ex === 'string').map((it) => {
           if (!known.has(it.ex)) { known.add(it.ex); exercises.push({ id: it.ex, name: 'Unbekannte Übung', group: 'Sonstiges', rest: null, timed: false, archived: true }); }
           return { id: str(it.id, 40) || uid(), ex: it.ex, ...cleanTarget(it) };
@@ -281,7 +286,7 @@ function sanitizeAthletes(list) {
   for (const a of Array.isArray(list) ? list : []) {
     if (!a || typeof a.id !== 'string' || !Array.isArray(a.results)) continue;
     out.push({
-      id: str(a.id, 40), name: str(a.name, 40) || 'Freund',
+      id: str(a.id, 40), name: str(a.name, 40) || 'Freund', lastImport: str(a.lastImport, 40),
       results: a.results.slice(0, 1000).map((r) => { const c = cleanSession(r); return c ? { ...c, planId: str(r.planId, 40), planName: str(r.planName, 60) } : null; }).filter(Boolean),
     });
   }
@@ -601,8 +606,11 @@ function renderTraining() {
       h('div', { class: 'empty-icon' }, icon('train')),
       h('h2', {}, 'Noch nichts eingetragen'),
       h('p', {}, 'Füge deine erste Übung hinzu und trage Gewicht und Wiederholungen ein.')));
+    const due = daysDueOn(date);
     page.append(h('div', { class: 'actions' },
-      h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => pickExercise(date) }, icon('plus', 20), 'Übung hinzufügen'),
+      ...due.map(({ plan, day }) => h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => startPlanDay(plan, day, date) },
+        icon('plan', 20), `${date === todayStr() ? 'Heute' : WD[isoWd(date) - 1]} dran: ${day.name} · ${plan.name}`)),
+      h('button', { class: `btn btn-block${due.length ? '' : ' btn-primary'}`, type: 'button', onclick: () => pickExercise(date) }, icon('plus', 20), 'Übung hinzufügen'),
       state.plans.some((pl) => pl.days.some((d) => d.items.length)) ? h('button', { class: 'btn btn-block', type: 'button', onclick: () => pickPlanDay(date) }, icon('plan', 20), 'Plan-Training starten') : null,
       prev ? h('button', { class: 'btn btn-block', type: 'button', onclick: () => copyWorkout(prev, date) }, `Training vom ${dfDay.format(fromDateStr(prev.date))} übernehmen`) : null));
     return page;
@@ -1486,7 +1494,7 @@ function renderPlans() {
 }
 
 function newPlan() {
-  const pl = { id: uid(), name: 'Neuer Plan', note: '', author: state.settings.name, mine: true, days: [{ id: uid(), name: 'Tag A', items: [] }] };
+  const pl = { id: uid(), name: 'Neuer Plan', note: '', author: state.settings.name, mine: true, days: [{ id: uid(), name: 'Tag A', wd: [], items: [] }] };
   state.plans.unshift(pl);
   save(true);
   ui.plan = { id: pl.id, mode: 'plan' };
@@ -1502,9 +1510,12 @@ function renderPlanDetail(plan) {
   if (plan.note) page.append(h('p', { style: 'margin-bottom:12px' }, plan.note));
   const nRes = state.athletes.reduce((a, x) => a + x.results.filter((r) => r.planId === plan.id).length, 0);
   if (mine) {
-    page.append(segmented([['plan', 'Plan'], ['res', `Ergebnisse${nRes ? ` (${nRes})` : ''}`]], ui.plan.mode, (v) => { ui.plan.mode = v; render({ keepScroll: false }); }, 'Ansicht'));
+    page.append(segmented([['plan', 'Plan'], ['week', 'Woche'], ['res', `Ergebnisse${nRes ? ` (${nRes})` : ''}`]], ui.plan.mode, (v) => { ui.plan.mode = v; render({ keepScroll: false }); }, 'Ansicht'));
+    if (ui.plan.mode === 'week') { page.append(...weekView(plan)); return page; }
     if (ui.plan.mode === 'res') { page.append(...resultsView(plan)); return page; }
   }
+  const myWeek = ownWeekCard(plan);
+  if (myWeek) page.append(myWeek);
   page.append(h('div', { class: 'actions', style: 'margin-bottom:14px' },
     mine ? h('button', { class: 'btn btn-block', type: 'button', onclick: () => sharePlan(plan) }, icon('share', 20), 'Plan an Freunde schicken')
       : h('button', { class: 'btn btn-block', type: 'button', onclick: () => sendResults(plan) }, icon('share', 20), `Ergebnisse an ${plan.author || 'den Trainer'} schicken`)));
@@ -1534,7 +1545,8 @@ function dayCard(plan, day) {
   });
   return h('section', { class: 'card' },
     h('div', { class: 'entry-head' },
-      h('div', { class: 'titles' }, h('h3', {}, day.name), last ? h('div', { class: 'small muted' }, `zuletzt gemacht: ${relDay(last)}`) : null),
+      h('div', { class: 'titles' }, h('h3', {}, day.name),
+        day.wd && day.wd.length || last ? h('div', { class: 'small muted' }, [wdText(day.wd), last ? `zuletzt gemacht: ${relDay(last)}` : ''].filter(Boolean).join(' · ')) : null),
       mine ? iconBtn('edit', `${day.name} bearbeiten`, () => dayEditSheet(plan, day)) : null),
     rows.length ? h('div', { class: 'list', style: 'margin:10px 0' }, rows) : h('p', { class: 'hint' }, mine ? 'Noch keine Übungen in diesem Tag.' : 'Leer.'),
     h('div', { class: 'actions' },
@@ -1543,7 +1555,7 @@ function dayCard(plan, day) {
 }
 
 function addDay(plan) {
-  plan.days.push({ id: uid(), name: `Tag ${String.fromCharCode(65 + (plan.days.length % 26))}`, items: [] });
+  plan.days.push({ id: uid(), name: `Tag ${String.fromCharCode(65 + (plan.days.length % 26))}`, wd: [], items: [] });
   save(true); render();
 }
 
@@ -1608,12 +1620,14 @@ function itemSheet(plan, day, it) {
 
 function dayEditSheet(plan, day) {
   const nameIn = textIn(day.name, { maxlength: '60', 'aria-label': 'Name des Tags' });
+  const wdPick = weekdayPicker(day.wd);
   const sheet = openSheet('Trainingstag', h('div'));
   sheet.setBody(h('form', {
     class: 'form-grid', novalidate: true,
-    onsubmit: (e) => { e.preventDefault(); const n = nameIn.value.trim(); if (!n) { toast('Bitte einen Namen eingeben', true); return; } day.name = n.slice(0, 60); save(true); sheet.close(); render(); },
+    onsubmit: (e) => { e.preventDefault(); const n = nameIn.value.trim(); if (!n) { toast('Bitte einen Namen eingeben', true); return; } day.name = n.slice(0, 60); day.wd = wdPick.get(); save(true); sheet.close(); render(); },
   },
   field('Name', nameIn),
+  wdPick.el,
   h('button', { class: 'btn btn-primary btn-block', type: 'submit' }, 'Speichern'),
   plan.days.length > 1 ? h('button', {
     class: 'btn btn-danger btn-block', type: 'button',
@@ -1644,7 +1658,7 @@ function editPlanSheet(plan) {
 function duplicatePlan(plan) {
   const copy = {
     ...plan, id: uid(), name: `${plan.name} (Kopie)`.slice(0, 60), mine: true, author: state.settings.name,
-    days: plan.days.map((d) => ({ id: uid(), name: d.name, items: d.items.map((it) => ({ ...it, id: uid() })) })),
+    days: plan.days.map((d) => ({ id: uid(), name: d.name, wd: [...(d.wd || [])], items: d.items.map((it) => ({ ...it, id: uid() })) })),
   };
   state.plans.unshift(copy); save(true);
   ui.plan = { id: copy.id, mode: 'plan' }; render({ keepScroll: false });
@@ -1741,6 +1755,175 @@ function resultsView(plan) {
   ];
 }
 
+/* ----- Wochenplan & Wochen-Überblick ----- */
+
+const WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const STATUS = { done: 'gemacht', extra: 'zusätzlich trainiert', missed: 'verpasst', open: 'geplant', rest: 'frei', na: 'keine Daten' };
+const isoWd = (d) => ((fromDateStr(d).getDay() + 6) % 7) + 1;
+const wdText = (wd) => (wd && wd.length ? wd.map((i) => WD[i - 1]).join(' · ') : '');
+const weekRange = (ws) => `${dfDay.format(fromDateStr(ws))} – ${dfDay.format(fromDateStr(addDays(ws, 6)))}`;
+const hasWd = (plan) => plan.days.some((d) => d.wd && d.wd.length);
+
+function isoWeek(d) {
+  const x = fromDateStr(d);
+  const t = new Date(Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
+}
+
+function weekdayPicker(initial) {
+  const sel = new Set(initial || []);
+  const row = h('div', { class: 'wdpick', role: 'group', 'aria-label': 'Wochentage' });
+  const draw = () => row.replaceChildren(...WD.map((l, i) => h('button', {
+    class: 'chip-btn', type: 'button', 'aria-pressed': String(sel.has(i + 1)),
+    onclick: () => { if (sel.has(i + 1)) sel.delete(i + 1); else sel.add(i + 1); draw(); },
+  }, l)));
+  draw();
+  return { el: h('div', { class: 'field' }, h('span', {}, 'Wochentage (optional)'), row), get: () => [...sel].sort() };
+}
+
+/** Was heute (laut Plan) dran ist und noch nicht gemacht wurde. */
+function daysDueOn(date) {
+  const wd = isoWd(date);
+  const out = [];
+  for (const pl of state.plans) {
+    for (const d of pl.days) {
+      if (!d.items.length || !(d.wd && d.wd.includes(wd))) continue;
+      if (state.workouts.some((w) => w.date === date && w.entries.length && w.plan && w.plan.planId === pl.id && w.plan.dayId === d.id)) continue;
+      out.push({ plan: pl, day: d });
+    }
+  }
+  return out.slice(0, 3);
+}
+
+/** Status je Wochentag. from = erstes bekanntes Datum, until = Stand der Daten (danach gilt ein Tag nur als „offen“). */
+function weekCells(plan, sessions, ws, { from = null, until = null } = {}) {
+  const today = todayStr();
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(ws, i);
+    const planned = plan.days.filter((d) => d.wd && d.wd.includes(i + 1));
+    const done = sessions.filter((x) => x.date === date);
+    let st;
+    if (done.length) st = planned.length ? 'done' : 'extra';
+    else if (!planned.length) st = 'rest';
+    else if (from && date < from) st = 'na';
+    else if (until != null ? date <= until : date < today) st = 'missed';
+    else st = 'open';
+    return { date, wd: i + 1, planned, done, st };
+  });
+}
+
+function weekNumbers(plan, cells, inWeek) {
+  const aw = hasWd(plan);
+  return {
+    goal: aw ? cells.filter((c) => c.planned.length).length : plan.days.length,
+    done: aw ? cells.filter((c) => c.planned.length && c.done.length).length : inWeek.length,
+    extra: aw ? cells.filter((c) => c.st === 'extra').length : 0,
+  };
+}
+const satzText = (n) => `${n} ${n === 1 ? 'Satz' : 'Sätze'}`;
+const weekText = ({ goal, done, extra }) => `Trainings: ${done} von ${goal}${extra ? ` · +${extra} zusätzlich` : ''}`;
+
+function weekStrip(cells) {
+  const today = todayStr();
+  return h('div', { class: 'wk', role: 'list' }, cells.map((c) => {
+    const mark = c.st === 'done' || c.st === 'extra' ? icon('check', 16) : c.st === 'missed' ? icon('x', 16) : c.st === 'open' ? h('span', { class: 'wk-dot' }) : h('span', {}, '–');
+    const planned = c.planned.map((d) => d.name).join(' / ');
+    return h('div', {
+      class: `wk-day ${c.st}${c.date === today ? ' today' : ''}`, role: 'listitem',
+      'aria-label': `${WD[c.wd - 1]} ${dfDay.format(fromDateStr(c.date))}: ${STATUS[c.st]}${planned ? ` (${planned})` : ''}`,
+    }, h('span', { class: 'wk-l' }, WD[c.wd - 1]), h('span', { class: 'wk-m' }, mark), h('span', { class: 'wk-n' }, planned));
+  }));
+}
+const weekLegend = () => h('p', { class: 'small muted', style: 'margin-top:8px' }, '✓ gemacht · ✕ verpasst · ● geplant · – frei');
+
+/** „Diese Woche“ für den eigenen Fortschritt (Freund und Trainer). */
+function ownWeekCard(plan) {
+  if (!hasWd(plan)) {
+    return plan.mine ? h('p', { class: 'small muted', style: 'margin-bottom:12px' }, 'Tipp: Lege bei jedem Trainingstag Wochentage fest (Stift am Tag). Dann sehen deine Freunde, wann was dran ist – und du bekommst die Wochen-Auswertung.') : null;
+  }
+  const ws = weekStart(todayStr());
+  const sessions = state.workouts.filter((w) => w.plan && w.plan.planId === plan.id && w.entries.length).map((w) => ({ date: w.date, dayId: w.plan.dayId }));
+  const cells = weekCells(plan, sessions, ws);
+  const inWeek = sessions.filter((x) => x.date >= ws && x.date <= addDays(ws, 6));
+  return h('section', { class: 'card', style: 'margin-bottom:14px' },
+    h('h2', { class: 'card-title' }, `Diese Woche · KW ${isoWeek(ws)}`),
+    weekStrip(cells),
+    h('p', { style: 'margin-top:10px;font-weight:600' }, weekText(weekNumbers(plan, cells, inWeek))),
+    weekLegend());
+}
+
+function resStats(list) {
+  let sets = 0; let volume = 0; const rp = [];
+  for (const r of list) for (const en of r.entries) for (const x of en.sets) { sets += 1; if (!en.t) volume += x.w * x.r; if (x.p) rp.push(x.p); }
+  return { sets, volume, rpe: rp.length ? rp.reduce((a, b) => a + b, 0) / rp.length : null };
+}
+
+function weekBars(items) {
+  const max = Math.max(1, ...items.map((i) => Math.max(i.done, i.goal)));
+  return h('div', {
+    class: 'wbars', role: 'img',
+    'aria-label': `Trainings pro Woche: ${items.map((i) => `KW ${i.label} ${i.na ? 'keine Daten' : `${i.done} von ${i.goal}`}`).join(', ')}`,
+  }, items.map((i) => h('div', { class: `wbar${i.cur ? ' cur' : ''}` },
+    h('span', { class: 'wbar-v' }, i.na ? '–' : `${i.done}/${i.goal}`),
+    h('div', { class: 'wbar-t' }, i.na ? null : [h('div', { class: 'wbar-goal', style: `height:${(i.goal / max) * 100}%` }), h('div', { class: 'wbar-fill', style: `height:${(i.done / max) * 100}%` })]),
+    h('span', { class: 'wbar-l' }, i.label))));
+}
+
+/** Trainer: pro Freund die gewählte Woche (Streifen Mo–So, Quote, Sätze, Ø RPE) + Verlauf der letzten 8 Wochen. */
+function weekView(plan) {
+  const ws = ui.plan.week || weekStart(todayStr());
+  const goTo = (w) => { ui.plan.week = w; render({ keepScroll: false }); };
+  const out = [h('div', { class: 'datebar' },
+    iconBtn('chevL', 'Vorherige Woche', () => goTo(addDays(ws, -7))),
+    h('div', { class: 'datebar-label' }, h('strong', { style: 'font-size:22px' }, `KW ${isoWeek(ws)}`), h('span', {}, weekRange(ws))),
+    iconBtn('chevR', 'Nächste Woche', () => goTo(addDays(ws, 7))))];
+
+  const groups = state.athletes.map((a) => ({ a, rs: a.results.filter((r) => r.planId === plan.id) })).filter((g) => g.rs.length);
+  if (!groups.length) return [...out, ...resultsView(plan)];
+  if (!hasWd(plan)) out.push(h('p', { class: 'small muted', style: 'margin-bottom:12px' }, 'Ohne Wochentage zählt die App pro Woche „alle Tage einmal“ als Ziel. Mit Wochentagen (Stift am Trainingstag) siehst du auch, welcher Tag verpasst wurde.'));
+
+  const rows = groups.map(({ a, rs }) => {
+    const dates = rs.map((r) => r.date).sort();
+    const from = dates[0];
+    const known = [dates[dates.length - 1], a.lastImport ? toDateStr(new Date(a.lastImport)) : ''].sort().pop();
+    const inWk = (w0) => rs.filter((r) => r.date >= w0 && r.date <= addDays(w0, 6));
+    const cells = weekCells(plan, rs, ws, { from, until: known });
+    const week = inWk(ws).sort((x, y) => (x.date < y.date ? -1 : 1));
+    const nums = weekNumbers(plan, cells, week);
+    const stats = resStats(week);
+    const before = addDays(ws, 6) < from;
+    const bars = Array.from({ length: 8 }, (_, k) => {
+      const w0 = addDays(ws, -7 * (7 - k));
+      const wk = inWk(w0);
+      const c = weekCells(plan, rs, w0, { from, until: known });
+      return { label: String(isoWeek(w0)), cur: k === 7, na: addDays(w0, 6) < from, ...weekNumbers(plan, c, wk) };
+    });
+    return { a, known, before, cells, week, nums, stats, bars };
+  });
+
+  const full = rows.filter((r) => !r.before && r.nums.goal > 0 && r.nums.done >= r.nums.goal).length;
+  out.push(h('p', { style: 'margin:0 0 12px;font-weight:600' }, `${full} von ${rows.length} ${rows.length === 1 ? 'Freund hat' : 'Freunden haben'} die Woche vollständig trainiert`));
+
+  rows.sort((x, y) => (y.nums.done / (y.nums.goal || 1)) - (x.nums.done / (x.nums.goal || 1)) || x.a.name.localeCompare(y.a.name, 'de'));
+  for (const r of rows) {
+    out.push(h('section', { class: 'card', style: 'margin-bottom:14px' },
+      h('div', { class: 'entry-head' },
+        h('div', { class: 'titles' }, h('h3', {}, r.a.name), h('div', { class: 'small muted' }, `Stand: ${relDay(r.known)} – später geplante Tage gelten als offen`))),
+      r.before
+        ? h('p', { class: 'hint' }, 'In dieser Woche gab es noch keine Ergebnisse.')
+        : [h('div', { style: 'margin-top:10px' }, weekStrip(r.cells)),
+          h('p', { style: 'margin-top:10px;font-weight:600' }, weekText(r.nums)),
+          r.stats.sets ? h('p', { class: 'small muted' }, `${satzText(r.stats.sets)}${r.stats.volume ? ` · ${nf.format(Math.round(r.stats.volume))} kg Volumen` : ''}${r.stats.rpe ? ` · Ø RPE ${fmt(r.stats.rpe)}` : ''}`) : null,
+          r.week.length ? h('div', { class: 'small', style: 'margin-top:6px' }, r.week.map((x) => h('div', {}, `${WD[isoWd(x.date) - 1]} ${dfDay.format(fromDateStr(x.date))} · ${x.dayName || 'Training'} · ${satzText(resStats([x]).sets)}`))) : null],
+      h('h3', { class: 'group-title', style: 'margin:14px 0 4px' }, 'Letzte 8 Wochen'),
+      weekBars(r.bars),
+      h('p', { class: 'small muted', style: 'margin-top:6px' }, 'hell = geplant, dunkel = gemacht (Zahl: gemacht/geplant)')));
+  }
+  out.push(weekLegend());
+  return out;
+}
+
 /* ----- Teilen: Link/Code (komprimiert, ohne Server) ----- */
 
 const toB64 = (bytes) => {
@@ -1823,7 +2006,7 @@ function portablePlan(plan) {
   return {
     id: plan.id, name: plan.name, note: plan.note, author: state.settings.name || plan.author,
     days: plan.days.map((d) => ({
-      id: d.id, name: d.name,
+      id: d.id, name: d.name, wd: d.wd || [],
       items: d.items.map((it) => {
         const e = exById(it.ex) || {};
         return { id: it.id, n: e.name || 'Übung', g: e.group || 'Sonstiges', tm: !!e.timed, sets: it.sets, rmin: it.rmin, rmax: it.rmax, rpe: it.rpe, w: it.w, rest: it.rest, note: it.note };
@@ -1873,7 +2056,7 @@ function cleanPlan(pl) {
   return {
     id: str(pl.id, 40), name: str(pl.name, 60) || 'Plan', note: str(pl.note, 500), author: str(pl.author, 40),
     days: pl.days.slice(0, 14).map((d) => ({
-      id: str(d && d.id, 40) || uid(), name: str(d && d.name, 60) || 'Tag',
+      id: str(d && d.id, 40) || uid(), name: str(d && d.name, 60) || 'Tag', wd: cleanWd(d && d.wd),
       items: (Array.isArray(d && d.items) ? d.items : []).slice(0, 40).filter((it) => it && typeof it.n === 'string' && it.n.trim())
         .map((it) => ({ id: str(it.id, 40) || uid(), n: str(it.n, 80).trim(), g: str(it.g, 20), tm: !!it.tm, ...cleanTarget(it) })),
     })),
@@ -1899,7 +2082,7 @@ function importPlan(cp) {
   const old = planById(cp.id);
   const plan = {
     id: cp.id, name: cp.name, note: cp.note, author: cp.author, mine: false,
-    days: cp.days.map((d) => ({ id: d.id, name: d.name, items: d.items.map((it) => ({ id: it.id, ex: find(it), sets: it.sets, rmin: it.rmin, rmax: it.rmax, rpe: it.rpe, w: it.w, rest: it.rest, note: it.note })) })),
+    days: cp.days.map((d) => ({ id: d.id, name: d.name, wd: d.wd, items: d.items.map((it) => ({ id: it.id, ex: find(it), sets: it.sets, rmin: it.rmin, rmax: it.rmax, rpe: it.rpe, w: it.w, rest: it.rest, note: it.note })) })),
   };
   if (old) state.plans[state.plans.indexOf(old)] = plan; else state.plans.unshift(plan);
   save(true);
@@ -1908,8 +2091,9 @@ function importPlan(cp) {
 
 function importResults(res) {
   let a = state.athletes.find((x) => x.id === res.athlete.id);
-  if (!a) { a = { id: res.athlete.id, name: res.athlete.name, results: [] }; state.athletes.push(a); }
+  if (!a) { a = { id: res.athlete.id, name: res.athlete.name, lastImport: '', results: [] }; state.athletes.push(a); }
   a.name = res.athlete.name;
+  a.lastImport = new Date().toISOString();   // bis hierhin kennen wir den Stand des Freundes
   for (const sess of res.sessions) {
     const rec = { ...sess, planId: res.plan.id, planName: res.plan.name };
     const i = a.results.findIndex((r) => r.key === sess.key);
@@ -1937,7 +2121,7 @@ function showPreview(sheet, payload, code, viaLink = false) {
     const own = planById(cr.plan.id);
     info = [h('h3', {}, `Ergebnisse von ${cr.athlete.name}`), h('p', { class: 'small muted' }, `${cr.sessions.length} ${cr.sessions.length === 1 ? 'Training' : 'Trainings'} zum Plan „${cr.plan.name}“`),
       own && own.mine ? null : h('p', { class: 'small', style: 'margin-top:10px' }, 'Hinweis: Du hast diesen Plan nicht selbst erstellt. Die Ergebnisse werden trotzdem gespeichert.')];
-    apply = () => { importResults(cr); sheet.close(); toast('Ergebnisse übernommen'); go('plans', { plan: { id: own && own.mine ? own.id : null, mode: 'res' } }); };
+    apply = () => { importResults(cr); sheet.close(); toast('Ergebnisse übernommen'); go('plans', { plan: { id: own && own.mine ? own.id : null, mode: 'week' } }); };
   } else {
     throw new Error('Das ist kein FitLog-Plan und keine Ergebnisse.');
   }
