@@ -1,7 +1,7 @@
 /* FitLog Service Worker – macht die App offline-fähig.
    Strategie: gecachte Datei sofort ausliefern, im Hintergrund aktualisieren
    (Updates erscheinen beim nächsten Start der App). */
-const CACHE = 'fitlog-v1';
+const CACHE = 'fitlog-v2';
 const ASSETS = [
   './',
   'index.html',
