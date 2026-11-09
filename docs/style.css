@@ -679,3 +679,96 @@ details.group[open] > summary::after { transform: rotate(-135deg) translateY(-2p
 #rest.done { animation: restpulse 0.9s ease-out 2; }
 @keyframes restpulse { 0% { filter: brightness(1.35); } 100% { filter: none; } }
 @media (prefers-reduced-motion: reduce) { #rest.done { animation: none; } .rest-fill { transition: none; } }
+
+/* ---------- Pläne, RPE, Ergebnisse ---------- */
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  margin: -6px 0 4px -6px;
+  padding: 0 10px 0 2px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.form-row .field { flex: 1; min-width: 0; }
+
+.sets.has-rpe .set-head,
+.sets.has-rpe .set-row { grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) 52px 44px; gap: 6px; }
+.sets.has-rpe .check { width: 44px; height: 44px; }
+.num.rpe { font-size: 18px; padding: 6px 2px; }
+
+.plan-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+.plan-line svg { flex: none; }
+.plan-note { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 5px 12px 5px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+details.sess { border-top: 1px solid var(--border); }
+details.sess > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px 2px;
+  list-style: none;
+  cursor: pointer;
+}
+details.sess > summary::-webkit-details-marker { display: none; }
+details.sess > summary .main { flex: 1; min-width: 0; }
+details.sess > summary .title { font-weight: 600; }
+details.sess > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 0.15s;
+}
+details.sess[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.sess-ex { padding: 8px 0 10px; border-top: 1px dashed var(--border); }
+.sess-ex .title { font-weight: 600; }
+.flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* schmale iPhones: Zahlen in der Satz-Zeile mit RPE-Spalte verkleinern, damit z. B. „102,5“ passt */
+.sets.has-rpe .num { padding: 6px 4px; font-size: 19px; }
+.sets.has-rpe .num.rpe { font-size: 17px; }
+@media (max-width: 359px) {
+  .sets.has-rpe .num { font-size: 16px; padding: 6px 2px; }
+  .sets.has-rpe .num.rpe { font-size: 15px; }
+}

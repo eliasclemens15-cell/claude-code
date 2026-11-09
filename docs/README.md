@@ -15,6 +15,19 @@ lokal im Browser (`localStorage`) auf dem Gerät.
 - **Fortschritt:** Diagramme je Übung (Gewicht, 1RM, Volumen, Wiederholungen/Zeit),
   Übersicht aller Übungen, Körpergewicht.
 
+## Pläne für Freunde (ohne Server)
+
+1. *Pläne → Neu*: Tage und Übungen anlegen, je Übung Sätze, Wiederholungen, Ziel-RPE, Gewicht, Pause, Hinweis.
+2. *Plan an Freunde schicken* erzeugt eine Nachricht mit Link (WhatsApp/iMessage …).
+3. Freunde tippen den Link. Auf dem iPhone öffnet sich der Link immer in Safari, nie in der installierten
+   App (iOS kann das nicht): deshalb *Code kopieren*, dann in der App *Pläne → Plan oder Ergebnisse einfügen*.
+4. Sie starten einen Tag, tragen Gewicht, Wiederholungen und RPE ein und schicken per
+   *Ergebnisse schicken* alles zurück; unter *Pläne → Plan → Ergebnisse* siehst du es im Vergleich zur Vorgabe.
+
+Alles steckt komprimiert im Link (`#p=…` Plan, `#r=…` Ergebnisse, Format `FL2.` = deflate + base64url).
+Es gibt keinen Server: Daten wandern nur, wenn jemand sie verschickt. Importierte Daten werden streng geprüft
+(`cleanPlan`, `cleanResults`, `cleanTarget`).
+
 ## Auf dem iPhone installieren
 
 1. Die Seite in **Safari** öffnen (GitHub Pages: *Settings → Pages → Deploy from a branch →
