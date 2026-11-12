@@ -1,7 +1,8 @@
 /* FitLog Service Worker – macht die App offline-fähig.
    Strategie: gecachte Datei sofort ausliefern, im Hintergrund aktualisieren
    (Updates erscheinen beim nächsten Start der App). */
-const CACHE = 'fitlog-v4';
+const CACHE = 'fitlog-v5';
+const VENDOR_CACHE = 'fitlog-vendor-mediapipe-0.10.14'; // bleibt über App-Updates erhalten
 const ASSETS = [
   './',
   'index.html',
@@ -23,7 +24,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== VENDOR_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -31,6 +32,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+
+  // Große, unveränderliche Dateien (Pose-Erkennung): einmal laden, danach nur aus dem Cache.
+  if (new URL(req.url).pathname.includes('/vendor/')) {
+    event.respondWith(
+      caches.open(VENDOR_CACHE).then(async (cache) => {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res && res.ok) cache.put(req, res.clone());
+        return res;
+      })
+    );
+    return;
+  }
 
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {

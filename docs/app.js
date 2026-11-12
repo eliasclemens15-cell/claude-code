@@ -133,6 +133,10 @@ const ICONS = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   share: '<path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3z"/>',
+  play: '<path d="M7 4.5v15l12.5-7.5z"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  body: '<circle cx="12" cy="4.5" r="2"/><path d="M12 7.5v6.5M6.5 10.5l5.5-2 5.5 2M8.5 21l3.5-7 3.5 7"/>',
   plan: '<rect x="5.5" y="4" width="13" height="17" rx="2.5"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 17.5h3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   minus: '<path d="M5 12h14"/>',
@@ -517,6 +521,7 @@ const TABS = [
   { id: 'history', label: 'Verlauf', icon: 'history', render: renderHistory },
   { id: 'progress', label: 'Fortschritt', icon: 'chart', render: renderProgress },
   { id: 'exercises', label: 'Übungen', icon: 'list', render: renderExercises, hidden: true }, // erreichbar über „Mehr“
+  { id: 'videos', label: 'Videos', icon: 'video', render: renderVideos, hidden: true },
   { id: 'more', label: 'Mehr', icon: 'more', render: renderSettings },
 ];
 
@@ -528,7 +533,7 @@ function render({ keepScroll = true } = {}) {
   tabsEl.replaceChildren(...TABS.filter((t) => !t.hidden).map((t) =>
     h('button', {
       type: 'button',
-      'aria-current': t.id === ui.tab || (t.id === 'more' && ui.tab === 'exercises') ? 'page' : false,
+      'aria-current': t.id === ui.tab || (t.id === 'more' && (ui.tab === 'exercises' || ui.tab === 'videos')) ? 'page' : false,
       onclick: () => {
         if (ui.tab !== t.id) { ui.tab = t.id; render({ keepScroll: false }); }
         else if (t.id === 'plans' && ui.plan.id) { ui.plan.id = null; render({ keepScroll: false }); } // erneut tippen = zurück zur Liste
@@ -753,12 +758,14 @@ function entryCard(w, entry, onChange) {
     target && target.note ? h('p', { class: 'plan-note' }, target.note) : null,
     h('p', { class: 'hint' },
       last ? [`Letztes Mal (${dfDay.format(fromDateStr(last.date))}): `, h('b', {}, fmtSets(last.sets, timed))] : 'Noch keine Vergleichswerte – das ist dein Startpunkt.'),
+    videoStrip(entry.exerciseId, w.date),
     setsEl,
     h('div', { class: 'entry-foot' },
       h('button', { class: 'btn btn-small', type: 'button', onclick: addSet }, icon('plus', 18), 'Satz'),
       h('button', { class: 'btn btn-small', type: 'button', 'aria-label': 'Letzten Satz entfernen', onclick: removeLast }, icon('minus', 18), 'Satz'),
       h('button', { class: 'btn btn-small', type: 'button', 'aria-label': `Pause starten (${fmtTime(rest())})`, onclick: () => startRest(rest(), exName(entry.exerciseId)) },
         icon('timer', 18), fmtTime(rest())),
+      h('button', { class: 'btn btn-small', type: 'button', 'aria-label': 'Video hinzufügen', onclick: () => pickVideo(entry.exerciseId, w.date) }, icon('video', 18), 'Video'),
       prEl, volEl));
 
   function refresh() {
@@ -1400,6 +1407,10 @@ function renderSettings() {
 
   page.append(h('div', { class: 'stack' },
     h('div', { class: 'list' },
+      h('button', { class: 'row', type: 'button', onclick: () => go('videos') },
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Videos'),
+          h('div', { class: 'sub' }, mediaCache.length ? `${mediaCache.length} ${mediaCache.length === 1 ? 'Video' : 'Videos'} · ${fmtBytes(mediaCache.reduce((a, m) => a + (m.size || 0), 0))}` : 'Trainingsvideos mit Skelett-Ansicht')),
+        h('span', { class: 'chev' }, icon('chevR', 18))),
       h('button', { class: 'row', type: 'button', onclick: () => go('exercises') },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'Übungen verwalten'),
           h('div', { class: 'sub' }, `${state.exercises.filter((e) => !e.archived).length} Übungen · Pausen, Gruppen, eigene Übungen`)),
@@ -1420,7 +1431,7 @@ function renderSettings() {
       h('p', { class: 'small muted', style: 'margin-top:12px' }, 'Für einzelne Übungen stellst du unter „Übungen“ eine eigene Pause ein.')),
     h('section', { class: 'card' },
       h('h2', { class: 'card-title' }, 'Backup'),
-      h('p', { class: 'small', style: 'margin-bottom:12px' }, 'Deine Daten liegen nur auf diesem iPhone. Sichere sie ab und zu – z. B. in „Dateien“ oder iCloud Drive. Das Backup ist eine einfache JSON-Datei.'),
+      h('p', { class: 'small', style: 'margin-bottom:12px' }, 'Deine Daten liegen nur auf diesem iPhone. Sichere sie ab und zu – z. B. in „Dateien“ oder iCloud Drive. Das Backup ist eine einfache JSON-Datei. Videos sind nicht enthalten – wichtige Videos sicherst du im Video über „Sichern“.'),
       h('p', { class: 'small muted', style: 'margin-bottom:12px' }, last ? `Letztes Backup: ${dfYear.format(new Date(last))}` : 'Noch kein Backup erstellt.'),
       h('div', { class: 'actions' },
         h('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: exportBackup }, icon('share', 20), 'Backup sichern'),
@@ -2168,6 +2179,475 @@ async function handleIncoming() {
 }
 
 /* =====================================================================
+   Videos: speichern (IndexedDB), ansehen, Skelett-Analyse (MediaPipe, auf dem Gerät)
+   ===================================================================== */
+
+const MEDIA_DB = 'fitlog-media';
+let mediaCache = [];          // Metadaten aller Videos (ohne die Videodaten selbst)
+let mediaDbP = null;
+
+function fmtBytes(n) {
+  if (n >= 1e9) return `${nf.format(Math.round(n / 1e8) / 10)} GB`;
+  if (n >= 1e6) return `${nf.format(Math.round(n / 1e5) / 10)} MB`;
+  return `${Math.max(1, Math.round(n / 1e3))} KB`;
+}
+const fmtDur = (sec) => (Number.isFinite(sec) && sec > 0 ? fmtTime(Math.round(sec)) : '');
+
+function mediaDb() {
+  if (!mediaDbP) {
+    mediaDbP = new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) { reject(new Error('Dieser Browser kann keine Videos speichern.')); return; }
+      const rq = indexedDB.open(MEDIA_DB, 1);
+      rq.onupgradeneeded = () => { const db = rq.result; db.createObjectStore('meta', { keyPath: 'id' }); db.createObjectStore('blobs'); };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error || new Error('Video-Speicher nicht verfügbar'));
+    }).catch((e) => { mediaDbP = null; throw e; });
+  }
+  return mediaDbP;
+}
+const reqP = (r) => new Promise((ok, no) => { r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+const txDone = (tx) => new Promise((ok, no) => { tx.oncomplete = () => ok(); tx.onerror = tx.onabort = () => no(tx.error || new Error('Speichern fehlgeschlagen')); });
+
+async function loadVideoMeta() {
+  try {
+    const db = await mediaDb();
+    mediaCache = await reqP(db.transaction('meta').objectStore('meta').getAll());
+    if (mediaCache.length) render();
+  } catch (e) { console.warn('Videos:', e); }
+}
+async function videoBlob(id) { const db = await mediaDb(); return reqP(db.transaction('blobs').objectStore('blobs').get(id)); }
+async function videoSave(meta, blob) {
+  const db = await mediaDb();
+  const tx = db.transaction(['meta', 'blobs'], 'readwrite');
+  tx.objectStore('meta').put(meta);
+  tx.objectStore('blobs').put(blob, meta.id);
+  await txDone(tx);
+  mediaCache = [...mediaCache.filter((m) => m.id !== meta.id), meta];
+}
+async function videoDelete(id) {
+  const db = await mediaDb();
+  const tx = db.transaction(['meta', 'blobs'], 'readwrite');
+  tx.objectStore('meta').delete(id);
+  tx.objectStore('blobs').delete(id);
+  await txDone(tx);
+  mediaCache = mediaCache.filter((m) => m.id !== id);
+}
+const videosFor = (exId, date) => mediaCache.filter((m) => m.exerciseId === exId && m.date === date).sort((a, b) => (a.created < b.created ? -1 : 1));
+
+/** Vorschaubild + Dauer aus dem Video lesen (klappt nicht bei jedem Format – dann ohne Bild). */
+function videoThumb(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    let finished = false;
+    const done = (thumb) => {
+      if (finished) return; finished = true;
+      const d = Number.isFinite(v.duration) ? v.duration : 0;
+      URL.revokeObjectURL(url); v.removeAttribute('src'); v.load();
+      resolve({ thumb, duration: d, w: v.videoWidth || 0, h: v.videoHeight || 0 });
+    };
+    const timer = setTimeout(() => done(''), 8000);
+    v.addEventListener('loadeddata', () => { v.currentTime = Math.min(0.5, (Number.isFinite(v.duration) ? v.duration : 1) / 3); }, { once: true });
+    v.addEventListener('seeked', () => {
+      clearTimeout(timer);
+      try {
+        const w = 240; const hh = Math.round((w * v.videoHeight) / v.videoWidth) || 135;
+        const c = document.createElement('canvas'); c.width = w; c.height = hh;
+        c.getContext('2d').drawImage(v, 0, 0, w, hh);
+        done(c.toDataURL('image/jpeg', 0.72));
+      } catch { done(''); }
+    }, { once: true });
+    v.addEventListener('error', () => { clearTimeout(timer); done(''); }, { once: true });
+    v.src = url; v.load();
+  });
+}
+
+const videoInput = h('input', { type: 'file', accept: 'video/*', multiple: true, hidden: true, 'aria-hidden': 'true' });
+document.body.append(videoInput);
+let videoTarget = null;
+videoInput.addEventListener('change', async () => {
+  const files = [...videoInput.files]; videoInput.value = '';
+  const target = videoTarget; videoTarget = null;
+  if (!files.length || !target) return;
+  for (const file of files) await addVideo(file, target);
+});
+
+/** Öffnet Kamera/Mediathek (iOS fragt, woher das Video kommen soll). */
+function pickVideo(exerciseId, date) {
+  videoTarget = { exerciseId, date };
+  videoInput.click();
+}
+
+async function addVideo(file, { exerciseId, date }) {
+  if (!file.type.startsWith('video/') && !/\.(mov|mp4|m4v|webm)$/i.test(file.name)) { toast('Das ist kein Video', true); return; }
+  if (file.size > 800e6 && !confirm(`Das Video ist ${fmtBytes(file.size)} groß und braucht viel Speicher auf dem iPhone. Trotzdem speichern?`)) return;
+  toast('Video wird gespeichert …');
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    const info = await videoThumb(file);
+    const meta = { id: uid(), exerciseId, date, name: file.name.slice(0, 120), type: file.type || 'video/mp4', size: file.size, duration: info.duration, thumb: info.thumb, created: new Date().toISOString() };
+    await videoSave(meta, file);
+    toast('Video gespeichert');
+    render();
+  } catch (e) {
+    console.warn(e);
+    toast(e && e.name === 'QuotaExceededError' ? 'Nicht genug Speicher für dieses Video' : 'Video konnte nicht gespeichert werden', true);
+  }
+}
+
+function videoTile(m, opts = {}) {
+  return h('button', { class: 'vthumb', type: 'button', 'aria-label': `Video ${exName(m.exerciseId)} vom ${dfDay.format(fromDateStr(m.date))} ansehen`, onclick: () => openViewer(m) },
+    m.thumb ? h('img', { src: m.thumb, alt: '' }) : h('span', { class: 'vthumb-ph' }, icon('video', 26)),
+    h('span', { class: 'vthumb-play' }, icon('play', 16)),
+    m.duration ? h('span', { class: 'vthumb-d' }, fmtDur(m.duration)) : null,
+    opts.label ? h('span', { class: 'vthumb-l' }, opts.label) : null);
+}
+
+function videoStrip(exId, date) {
+  const list = videosFor(exId, date);
+  if (!list.length) return null;
+  return h('div', { class: 'vstrip' }, list.map((m) => videoTile(m)));
+}
+
+function renderVideos() {
+  const page = h('div', { class: 'page' }, backLink('Mehr', () => go('more')), pageHead('Videos',
+    h('button', { class: 'btn btn-small btn-primary', type: 'button', onclick: () => openExercisePicker({ onPick: (exId) => pickVideo(exId, todayStr()) }) }, icon('plus', 18), 'Video')));
+  const usage = h('p', { class: 'small muted', style: 'margin-bottom:12px' },
+    `${mediaCache.length} ${mediaCache.length === 1 ? 'Video' : 'Videos'} · ${fmtBytes(mediaCache.reduce((a, m) => a + (m.size || 0), 0))} auf diesem Gerät`);
+  page.append(usage);
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then((e) => { if (e && e.quota) usage.textContent += ` · noch ca. ${fmtBytes(Math.max(0, e.quota - e.usage))} frei`; }).catch(() => {});
+  }
+  if (!mediaCache.length) {
+    page.append(h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('video')), h('h2', {}, 'Noch keine Videos'),
+      h('p', {}, 'Im Training tippst du bei einer Übung auf „Video“ und filmst oder wählst ein Video aus. Im Video siehst du dann das Skelett, Gelenkwinkel und Hinweise.')));
+  } else {
+    const byDate = new Map();
+    for (const m of [...mediaCache].sort((a, b) => (a.date === b.date ? (a.created < b.created ? 1 : -1) : a.date < b.date ? 1 : -1))) {
+      if (!byDate.has(m.date)) byDate.set(m.date, []);
+      byDate.get(m.date).push(m);
+    }
+    for (const [date, list] of byDate) {
+      page.append(h('h2', { class: 'group-title' }, dfShort.format(fromDateStr(date))),
+        h('div', { class: 'vgrid' }, list.map((m) => videoTile(m, { label: exName(m.exerciseId) }))));
+    }
+  }
+  page.append(h('p', { class: 'small muted', style: 'margin-top:16px' },
+    'Videos bleiben nur auf diesem Gerät und sind nicht im Backup und nicht in geteilten Plänen enthalten. Zum Aufheben im Video auf „Sichern“ tippen.'));
+  return page;
+}
+
+/* ----- Pose-Erkennung (MediaPipe Pose Landmarker, lokal mitgeliefert) ----- */
+
+let poseLib = null;
+let poseLibP = null;
+let poseTs = 0;
+const nextPoseTs = () => (poseTs = Math.max(poseTs + 1, performance.now()));
+
+function loadPose() {
+  if (poseLib) return Promise.resolve(poseLib);
+  if (!poseLibP) {
+    poseLibP = (async () => {
+      const m = await import('./vendor/mediapipe/vision_bundle.mjs');
+      const base = new URL('vendor/mediapipe/', location.href).href;
+      const files = { wasmLoaderPath: `${base}vision_wasm_internal.js`, wasmBinaryPath: `${base}vision_wasm_internal.wasm` };
+      const opts = (delegate) => ({ baseOptions: { modelAssetPath: `${base}pose_landmarker_lite.task`, delegate }, runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5 });
+      let pl;
+      try { pl = await m.PoseLandmarker.createFromOptions(files, opts('GPU')); } catch { pl = await m.PoseLandmarker.createFromOptions(files, opts('CPU')); }
+      poseLib = { pl, conns: m.PoseLandmarker.POSE_CONNECTIONS };
+      return poseLib;
+    })().catch((e) => { poseLibP = null; throw e; });
+  }
+  return poseLibP;
+}
+
+const SIDE = {
+  L: { sh: 11, el: 13, wr: 15, hip: 23, kn: 25, an: 27 },
+  R: { sh: 12, el: 14, wr: 16, hip: 24, kn: 26, an: 28 },
+};
+const ANGLE_NAMES = { knee: 'Knie', hip: 'Hüfte', elbow: 'Ellbogen', trunk: 'Oberkörper-Neigung' };
+const vis = (p) => (p && (p.visibility == null ? 1 : p.visibility)) || 0;
+
+/** Winkel an Punkt b (in Grad), mit echtem Seitenverhältnis des Videos. */
+function jointAngle(a, b, c, ar) {
+  const ux = (a.x - b.x) * ar; const uy = a.y - b.y; const vx = (c.x - b.x) * ar; const vy = c.y - b.y;
+  const d = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+  return d ? (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / d))) * 180) / Math.PI : null;
+}
+
+function poseAngles(lm, ar) {
+  const score = (s) => Object.values(SIDE[s]).reduce((a, i) => a + vis(lm[i]), 0);
+  const side = score('L') >= score('R') ? 'L' : 'R';
+  const j = SIDE[side];
+  const ok = (...ids) => ids.every((i) => vis(lm[i]) > 0.5);
+  const out = { side };
+  if (ok(j.hip, j.kn, j.an)) out.knee = jointAngle(lm[j.hip], lm[j.kn], lm[j.an], ar);
+  if (ok(j.sh, j.hip, j.kn)) out.hip = jointAngle(lm[j.sh], lm[j.hip], lm[j.kn], ar);
+  if (ok(j.sh, j.el, j.wr)) out.elbow = jointAngle(lm[j.sh], lm[j.el], lm[j.wr], ar);
+  if (ok(j.sh, j.hip)) {
+    const dx = (lm[j.sh].x - lm[j.hip].x) * ar; const dy = lm[j.hip].y - lm[j.sh].y;
+    out.trunk = (Math.atan2(Math.abs(dx), dy) * 180) / Math.PI;   // 0° = aufrecht
+  }
+  return out;
+}
+
+/** Grobe, ehrliche Hinweise aus den gemessenen Winkeln (2D-Video, keine Diagnose). */
+function formHints(name, st) {
+  const n = name.toLowerCase();
+  const out = [];
+  const squat = /kniebeug|squat|beinpresse|ausfallschritt|split|lunge|step-up|goblet/.test(n);
+  const hinge = /kreuzheb|deadlift|rumän|good morning|hip thrust|pull-through/.test(n);
+  const press = /bank|drück|press|liegestütz|dips|floor/.test(n);
+  const r = (v) => Math.round(v);
+  if (squat && st.knee) {
+    out.push(st.knee.min > 100
+      ? `Tiefe: Das Knie wurde nur bis etwa ${r(st.knee.min)}° gebeugt. Bei einer tiefen Kniebeuge liegt der Kniewinkel meist bei 90° oder darunter.`
+      : `Tiefe: Kniewinkel bis ${r(st.knee.min)}° – eine tiefe Position.`);
+  }
+  if (squat && st.trunk && st.trunk.max > 45) out.push(`Oberkörper neigt sich bis ${r(st.trunk.max)}° nach vorn. Etwas Vorlage ist normal; deutlich mehr kann auf zu wenig Rumpfspannung oder das Gewicht zu weit vorn hindeuten.`);
+  if (hinge && st.hip) out.push(`Hüftbeugung bis ${r(st.hip.min)}°, Streckung bis ${r(st.hip.max)}°. ${st.hip.max < 165 ? 'Oben wurde die Hüfte nicht ganz gestreckt.' : 'Oben volle Hüftstreckung.'}`);
+  if (press && st.elbow) {
+    out.push(st.elbow.min > 100
+      ? `Bewegungstiefe: Ellbogen nur bis etwa ${r(st.elbow.min)}° gebeugt – eventuell eine Teilwiederholung. Für den vollen Weg meist um 90° oder tiefer.`
+      : `Ellbogen bis ${r(st.elbow.min)}° gebeugt – voller Bewegungsweg.`);
+  }
+  if (!out.length) {
+    const parts = Object.entries(st).filter(([, v]) => v).map(([k, v]) => `${ANGLE_NAMES[k]} ${r(v.min)}–${r(v.max)}°`);
+    if (parts.length) out.push(`Bewegungsumfang: ${parts.join(', ')}.`);
+  }
+  return out;
+}
+
+/* ----- Video-Ansicht ----- */
+
+function openViewer(meta) {
+  const name = exName(meta.exerciseId);
+  const video = h('video', { playsinline: true, 'webkit-playsinline': true, preload: 'auto', 'aria-label': `Video ${name}` });
+  video.playsInline = true;
+  const canvas = h('canvas', { class: 'vcanvas', 'aria-hidden': 'true' });
+  const status = h('p', { class: 'vstatus', role: 'status' });
+  const timeLbl = h('span', { class: 'vtime' }, '0:00');
+  const scrub = h('input', { type: 'range', min: '0', max: '0', step: '0.01', value: '0', class: 'vscrub', 'aria-label': 'Position im Video' });
+  const playBtn = iconBtn('play', 'Abspielen', () => (video.paused ? video.play().catch(() => {}) : video.pause()), 'vplay');
+  const angleBox = h('div', { class: 'vangles', 'aria-live': 'off' });
+  const hintBox = h('div', { class: 'vhints' });
+  const opt = { skel: true, angles: true, trail: 'wr', rate: 1 };
+  let pose = null; let lib = null; let url = ''; let rvfc = 0; let raf = 0; let closed = false;
+  let stats = {}; let trail = [];
+
+  const optRow = h('div', { class: 'vopts' });
+  function drawOpts() {
+    optRow.replaceChildren(
+      h('div', { class: 'chips vchips' },
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(opt.skel), onclick: () => { opt.skel = !opt.skel; drawOpts(); if (opt.skel) startPose(); draw(); } }, icon('body', 16), ' Skelett'),
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(opt.angles), onclick: () => { opt.angles = !opt.angles; drawOpts(); draw(); } }, 'Winkel'),
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(opt.trail === 'wr'), onclick: () => { opt.trail = opt.trail === 'wr' ? '' : 'wr'; drawOpts(); draw(); } }, 'Bahn: Hand'),
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(opt.trail === 'hip'), onclick: () => { opt.trail = opt.trail === 'hip' ? '' : 'hip'; drawOpts(); draw(); } }, 'Bahn: Hüfte')),
+      segmented([['0.25', '¼×'], ['0.5', '½×'], ['1', '1×']], String(opt.rate), (v) => { opt.rate = Number(v); video.playbackRate = opt.rate; drawOpts(); }, 'Geschwindigkeit'));
+  }
+
+  const step = (dir) => { video.pause(); video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + dir / 30)); };
+  const shareBtn = h('button', { class: 'btn btn-small', type: 'button', onclick: () => saveVideo(meta) }, icon('share', 18), 'Sichern');
+  const delBtn = iconBtn('trash', 'Video löschen', async () => {
+    if (!confirm('Dieses Video löschen?')) return;
+    try { await videoDelete(meta.id); close(); toast('Video gelöscht'); render(); } catch { toast('Löschen fehlgeschlagen', true); }
+  }, 'danger');
+
+  const root = h('div', { class: 'viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Video: ${name}` },
+    h('div', { class: 'vhead' },
+      iconBtn('x', 'Video schließen', () => close(), 'vclose'),
+      h('div', { class: 'vtitle' }, h('strong', {}, name), h('span', {}, `${dfShort.format(fromDateStr(meta.date))}${meta.duration ? ` · ${fmtDur(meta.duration)}` : ''}`))),
+    h('div', { class: 'vstage' }, video, canvas),
+    h('div', { class: 'vpanel' },
+      h('div', { class: 'vcontrols' },
+        iconBtn('chevL', 'Ein Bild zurück', () => step(-1)), playBtn, iconBtn('chevR', 'Ein Bild vor', () => step(1)), scrub, timeLbl),
+      optRow, status, angleBox, hintBox,
+      h('div', { class: 'vactions' }, shareBtn,
+        h('button', { class: 'btn btn-small', type: 'button', onclick: () => { stats = {}; trail = []; updatePanel(); draw(); } }, 'Werte zurücksetzen'),
+        delBtn),
+      h('p', { class: 'small muted', style: 'margin-top:10px' }, 'Blau = linke Körperseite, Orange = rechte. Am besten seitlich filmen, ganzer Körper im Bild, Handy auf Hüfthöhe. Die Werte sind eine grobe Orientierung aus einem 2D-Video – kein Ersatz für einen Trainer.')));
+  document.body.append(root);
+  document.body.classList.add('modal-open');
+  const onKey = (e) => { if (e.key === 'Escape') close(); else if (e.key === ' ') { e.preventDefault(); playBtn.click(); } };
+  document.addEventListener('keydown', onKey);
+  drawOpts();
+
+  function close() {
+    if (closed) return; closed = true;
+    video.pause();
+    if (rvfc && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(rvfc);
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    removeEventListener('resize', draw);
+    video.removeAttribute('src'); video.load();
+    if (url) URL.revokeObjectURL(url);
+    root.remove();
+    if (!$('#sheet-root').children.length) document.body.classList.remove('modal-open');
+  }
+
+  function contentRect() {
+    const ew = video.clientWidth; const eh = video.clientHeight; const vw = video.videoWidth || 1; const vh = video.videoHeight || 1;
+    const sc = Math.min(ew / vw, eh / vh);
+    return { x: (ew - vw * sc) / 2, y: (eh - vh * sc) / 2, w: vw * sc, h: vh * sc, ew, eh };
+  }
+
+  function draw() {
+    if (closed) return;
+    const dpr = window.devicePixelRatio || 1;
+    const r = contentRect();
+    if (canvas.width !== Math.round(r.ew * dpr) || canvas.height !== Math.round(r.eh * dpr)) { canvas.width = Math.round(r.ew * dpr); canvas.height = Math.round(r.eh * dpr); }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.ew, r.eh);
+    if (!opt.skel || !pose || !lib) return;
+    const P = (q) => [r.x + q.x * r.w, r.y + q.y * r.h];
+    const sideOf = (i) => (i <= 10 ? 'C' : i % 2 ? 'L' : 'R');
+    const color = { L: '#3987e5', R: '#eb6834', C: '#ffffff' };
+    // Bewegungsbahn
+    if (opt.trail) {
+      const pts = trail.filter((t) => t.k === opt.trail && t.t <= video.currentTime + 0.02 && t.t >= video.currentTime - 4).sort((a, b) => a.t - b.t);
+      if (pts.length > 1) {
+        ctx.lineWidth = 3; ctx.strokeStyle = '#ffd400'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath(); pts.forEach((t, i) => { const [x, y] = P(t); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+      }
+    }
+    // Knochen
+    for (const c of lib.conns) {
+      const a = pose[c.start]; const b = pose[c.end];
+      if (vis(a) < 0.5 || vis(b) < 0.5 || (c.start <= 10 && c.end <= 10)) continue;
+      const [x1, y1] = P(a); const [x2, y2] = P(b);
+      const sa = sideOf(c.start); const sb = sideOf(c.end);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.strokeStyle = sa === sb ? color[sa] : '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    // Gelenke
+    pose.forEach((q, i) => {
+      if (i < 11 && i !== 0) return;
+      if (vis(q) < 0.5) return;
+      const [x, y] = P(q);
+      ctx.fillStyle = color[sideOf(i)]; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, i === 0 ? 6 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    });
+    // Winkel an den Gelenken
+    if (opt.angles) {
+      const a = poseAngles(pose, (video.videoWidth || 1) / (video.videoHeight || 1));
+      const j = SIDE[a.side];
+      const label = (deg, q) => {
+        if (deg == null) return;
+        const [x, y] = P(q); const txt = `${Math.round(deg)}°`;
+        ctx.font = '600 14px -apple-system, system-ui, sans-serif';
+        const w = ctx.measureText(txt).width + 12;
+        ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x + 10, y - 12, w, 24, 8) : ctx.rect(x + 10, y - 12, w, 24); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(txt, x + 16, y + 5);
+      };
+      label(a.knee, pose[j.kn]); label(a.hip, pose[j.hip]); label(a.elbow, pose[j.el]);
+    }
+  }
+
+  function updatePanel() {
+    const cur = pose ? poseAngles(pose, (video.videoWidth || 1) / (video.videoHeight || 1)) : {};
+    const rows = ['knee', 'hip', 'elbow', 'trunk'].map((k) => {
+      const now = cur[k] != null ? `${Math.round(cur[k])}°` : '–';
+      const st = stats[k];
+      return h('div', { class: 'vangle' }, h('span', { class: 'vangle-n' }, ANGLE_NAMES[k]), h('b', {}, now),
+        h('span', { class: 'vangle-r' }, st ? `${Math.round(st.min)}–${Math.round(st.max)}°` : ''));
+    });
+    angleBox.replaceChildren(h('div', { class: 'vangle head' }, h('span', {}, 'Winkel'), h('span', {}, 'jetzt'), h('span', {}, 'Bereich')), ...rows);
+    const hints = formHints(name, stats);
+    hintBox.replaceChildren(...(hints.length ? [h('h3', { class: 'group-title', style: 'margin:14px 0 6px' }, 'Auswertung'), ...hints.map((t) => h('p', { class: 'vhint' }, t))] : []));
+  }
+
+  function detect() {
+    if (closed || !opt.skel || !lib || video.readyState < 2) return;
+    let res;
+    try { res = lib.pl.detectForVideo(video, nextPoseTs()); } catch (e) { console.warn('Pose:', e); return; }
+    pose = (res && res.landmarks && res.landmarks[0]) || null;
+    if (pose) {
+      const ar = (video.videoWidth || 1) / (video.videoHeight || 1);
+      const a = poseAngles(pose, ar);
+      for (const k of ['knee', 'hip', 'elbow', 'trunk']) {
+        if (a[k] == null) continue;
+        const s0 = stats[k] || { min: a[k], max: a[k] };
+        stats[k] = { min: Math.min(s0.min, a[k]), max: Math.max(s0.max, a[k]) };
+      }
+      const j = SIDE[a.side];
+      const t = video.currentTime;
+      for (const [k, idx] of [['wr', j.wr], ['hip', j.hip]]) {
+        if (vis(pose[idx]) > 0.5) { trail = trail.filter((x) => !(x.k === k && Math.abs(x.t - t) < 0.01)); trail.push({ k, t, x: pose[idx].x, y: pose[idx].y }); }
+      }
+      if (trail.length > 4000) trail = trail.slice(-3000);
+    }
+    status.textContent = pose ? '' : 'Keine Person erkannt – ganzer Körper im Bild und gutes Licht helfen.';
+    draw(); updatePanel();
+  }
+
+  function loop() {
+    if (closed) return;
+    if ('requestVideoFrameCallback' in video) {
+      const cb = () => { detect(); if (!closed) rvfc = video.requestVideoFrameCallback(cb); };
+      rvfc = video.requestVideoFrameCallback(cb);
+    } else {
+      const tick = () => { if (closed) return; if (!video.paused) detect(); raf = requestAnimationFrame(tick); };
+      raf = requestAnimationFrame(tick);
+      video.addEventListener('seeked', detect);
+    }
+  }
+
+  async function startPose() {
+    if (lib || closed) { detect(); return; }
+    status.textContent = poseLibP ? 'Skelett wird vorbereitet …' : 'Skelett wird geladen … (beim ersten Mal ca. 15 MB, danach offline)';
+    try {
+      lib = await loadPose();
+      if (closed) return;
+      status.textContent = '';
+      detect();
+    } catch (e) {
+      console.warn('Pose laden:', e);
+      status.textContent = 'Das Skelett konnte nicht geladen werden. Bitte mit Internet erneut öffnen (iOS 16.4 oder neuer nötig).';
+      opt.skel = false; drawOpts();
+    }
+  }
+
+  video.addEventListener('loadedmetadata', () => { scrub.max = String(video.duration || 0); draw(); });
+  video.addEventListener('loadeddata', () => { if (opt.skel) startPose(); });
+  video.addEventListener('timeupdate', () => { scrub.value = String(video.currentTime); timeLbl.textContent = fmtTime(Math.floor(video.currentTime)); });
+  video.addEventListener('play', () => { playBtn.replaceChildren(icon('pause', 22)); playBtn.setAttribute('aria-label', 'Pause'); playBtn.title = 'Pause'; });
+  video.addEventListener('pause', () => { playBtn.replaceChildren(icon('play', 22)); playBtn.setAttribute('aria-label', 'Abspielen'); playBtn.title = 'Abspielen'; });
+  video.addEventListener('ended', () => { video.pause(); });
+  video.addEventListener('ratechange', () => { if (video.playbackRate !== opt.rate) video.playbackRate = opt.rate; });
+  scrub.addEventListener('input', () => { video.pause(); video.currentTime = Number(scrub.value); });
+  addEventListener('resize', draw);
+  updatePanel();
+  loop();
+
+  videoBlob(meta.id).then((blob) => {
+    if (closed) return;
+    if (!blob) { status.textContent = 'Video nicht gefunden.'; return; }
+    url = URL.createObjectURL(blob);
+    video.src = url;
+    video.load();
+  }).catch(() => { status.textContent = 'Video konnte nicht geladen werden.'; });
+}
+
+async function saveVideo(meta) {
+  try {
+    const blob = await videoBlob(meta.id);
+    if (!blob) return;
+    const ext = (meta.name.match(/\.[a-z0-9]+$/i) || ['.mp4'])[0];
+    const file = new File([blob], `FitLog ${exName(meta.exerciseId)} ${meta.date}${ext}`, { type: meta.type || blob.type || 'video/mp4' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    const u = URL.createObjectURL(file);
+    const a = h('a', { href: u, download: file.name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 10000);
+  } catch { toast('Sichern fehlgeschlagen', true); }
+}
+
+/* =====================================================================
    Pausen-Timer
    ===================================================================== */
 
@@ -2319,6 +2799,7 @@ document.addEventListener('visibilitychange', () => {
 applyTheme();
 render();
 restoreRest();
+loadVideoMeta();
 handleIncoming();
 addEventListener('hashchange', handleIncoming);
 

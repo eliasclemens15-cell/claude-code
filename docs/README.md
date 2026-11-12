@@ -33,6 +33,19 @@ Alles steckt komprimiert im Link (`#p=…` Plan, `#r=…` Ergebnisse, Format `FL
 Es gibt keinen Server: Daten wandern nur, wenn jemand sie verschickt. Importierte Daten werden streng geprüft
 (`cleanPlan`, `cleanResults`, `cleanTarget`).
 
+## Videos mit Skelett-Ansicht
+
+Im Training bei einer Übung auf **Video** tippen → filmen oder aus der Mediathek wählen. Im Video:
+Zeitlupe (¼×, ½×), Bild für Bild, **Skelett** (MediaPipe Pose, 33 Körperpunkte), Gelenkwinkel
+(Knie, Hüfte, Ellbogen, Oberkörper-Neigung) mit Bereich, Bewegungsbahn von Hand oder Hüfte und
+eine grobe Auswertung (z. B. Tiefe bei Kniebeugen, Bewegungsweg beim Drücken).
+
+- Alles läuft auf dem Gerät; Videos werden nirgends hochgeladen (IndexedDB `fitlog-media`).
+- Die Pose-Erkennung liegt in `vendor/mediapipe/` (ca. 15 MB, wird erst beim ersten Öffnen eines
+  Videos geladen und danach offline aus dem Cache bedient).
+- Videos sind **nicht** im JSON-Backup und nicht in geteilten Plänen – im Video „Sichern“ legt
+  eine Kopie in Fotos/Dateien ab.
+
 ## Auf dem iPhone installieren
 
 1. Die Seite in **Safari** öffnen (GitHub Pages: *Settings → Pages → Deploy from a branch →
